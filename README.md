@@ -65,6 +65,8 @@ Every task accepts the same three input shapes — file, URL, or raw string — 
 fftext s notes.txt
 fftext s https://example.com/post
 fftext s "Paste a long block of text right here on the command line."
+cat notes.txt | fftext s                               # read from stdin
+echo "clouds can weight more than a ton" | fftext c -  # "-" is stdin too, for any subcommand
 
 # Explain it like I'm ten
 fftext e paper.pdf.txt
@@ -89,9 +91,10 @@ fftext t -l "Egyptian Arabic" "Where is the train station?"
 
 `<input>` for any subcommand is resolved in this order:
 
-1. **Starts with `http://` or `https://`** → fetched with `requests`, parsed with `readability-lxml` to isolate the main article body, then stripped to plain text with paragraph breaks preserved. Falls back to a light tag-strip if readability can't find an article (common on docs pages and indexes).
-2. **Looks like an existing file path** → read as UTF-8 (errors replaced).
-3. **Anything else** → treated literally as a string.
+1. **`-` (a dash), or omitted entirely while stdin is piped** → read from stdin as UTF-8 (errors replaced). This lets fftext work as a Unix filter: `cat notes.txt | fftext s`. A bare `-` always reads stdin; omitting the argument reads stdin only when it's piped — on an interactive terminal an omitted argument prints usage instead of blocking on a read that would never return.
+2. **Starts with `http://` or `https://`** → fetched with `requests`, parsed with `readability-lxml` to isolate the main article body, then stripped to plain text with paragraph breaks preserved. Falls back to a light tag-strip if readability can't find an article (common on docs pages and indexes).
+3. **Looks like an existing file path** → read as UTF-8 (errors replaced).
+4. **Anything else** → treated literally as a string.
 
 Long inputs are head-and-tail clipped to ~10,000 characters (~2,500 tokens) so prompt + generation + chat template fit comfortably in the 4,096-token context. You'll see a `[note: input clipped...]` line on stderr when that happens. The clip keeps the start and end of the document, which preserves intros and conclusions — what summaries and explanations care about most.
 

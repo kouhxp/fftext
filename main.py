@@ -11,6 +11,7 @@ Subcommands (with single-letter aliases):
   - a path to an existing file -> read as UTF-8
   - a URL (http:// or https://) -> fetched, parsed via readability-lxml,
     HTML tags stripped, visible newlines preserved
+  - "-" (a dash), or omitted entirely while stdin is piped -> read stdin
   - any other string -> treated literally
 
 Legacy demo modes (no subcommand):
@@ -172,15 +173,20 @@ def resolve_input(arg: str) -> tuple[str, str]:
     """Return (text, source_label).
 
     Resolution order:
-      1. http:// or https:// prefix -> fetch + readability parse.
-      2. Existing file path -> read as UTF-8.
-      3. Anything else -> literal string.
+      1. "-" (dash) -> read stdin.
+      2. http:// or https:// prefix -> fetch + readability parse.
+      3. Existing file path -> read as UTF-8.
+      4. Anything else -> literal string.
     """
-    # 1. URL.
+    # 1. Explicit stdin sentinel.
+    if arg == "-":
+        return sys.stdin.buffer.read().decode("utf-8", errors="replace"), "<stdin>"
+
+    # 2. URL.
     if _URL_RE.match(arg):
         return _fetch_url(arg)
 
-    # 2. File path.
+    # 3. File path.
     if _looks_like_path(arg):
         try:
             p = Path(arg)
@@ -190,7 +196,7 @@ def resolve_input(arg: str) -> tuple[str, str]:
             # Any stat-level failure -> fall through and treat as a string.
             pass
 
-    # 3. Literal string.
+    # 4. Literal string.
     return arg, "<string>"
 
 
@@ -204,9 +210,12 @@ fftext - tiny local-LLM text helper
   fftext check     <file|url|string>          (alias: c)
   fftext translate [--lang "<target>"] <file|url|string>   (alias: t)
 
+Input is a file, URL, literal string, or "-"/omitted to read stdin.
+
 Examples:
   fftext s notes.txt
   fftext e https://example.com/post
+  cat notes.txt | fftext s                     # read piped stdin (or pass "-")
   fftext t hello.txt                          # defaults to English
   fftext t --lang "Castilian Spanish" hello.txt
   fftext t --lang "casual Japanese" "How are you today?"
@@ -291,9 +300,14 @@ def main() -> None:
             lang, rest = _extract_lang_flag(rest)
 
         if not rest:
-            print(f"fftext: '{cmd}' needs a filepath, URL, or string\n\n{USAGE}",
-                  file=sys.stderr)
-            sys.exit(2)
+            # No arg: treat piped stdin as the input. On a TTY there's
+            # nothing piped and a read would hang, so that's a usage error.
+            if not sys.stdin.isatty():
+                rest = ["-"]
+            else:
+                print(f"fftext: '{cmd}' needs a filepath, URL, string, "
+                      f"or '-' for stdin\n\n{USAGE}", file=sys.stderr)
+                sys.exit(2)
 
         # Join trailing args so unquoted multi-word strings still work,
         # but ONLY if the first arg doesn't look like a file or URL —
